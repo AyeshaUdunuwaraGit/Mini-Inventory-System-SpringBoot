@@ -6,11 +6,10 @@ import lombok.*;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class ProductRequestDTO {
-
     private String name;
+    private String priority;
     private int stockQuantity;
-    private int minQuantity;
-    private int restockAmount;
+    private int minThreshold;
+    private int restockQuantity;
 }

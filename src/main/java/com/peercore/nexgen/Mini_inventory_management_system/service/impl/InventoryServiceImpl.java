@@ -1,5 +1,7 @@
 package com.peercore.nexgen.Mini_inventory_management_system.service.impl;
 
+import com.peercore.nexgen.Mini_inventory_management_system.dto.requestDto.*;
+import com.peercore.nexgen.Mini_inventory_management_system.dto.ResponseDto.*;
 import com.peercore.nexgen.Mini_inventory_management_system.entity.Product;
 import com.peercore.nexgen.Mini_inventory_management_system.repository.ProductRepository;
 import com.peercore.nexgen.Mini_inventory_management_system.service.InventoryService;
@@ -10,86 +12,105 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 
-@Service
-public class InventoryServiceImpl implements InventoryService {
+ @Service
+ @RequiredArgsConstructor
+ public class InventoryServiceImpl implements InventoryService {
 
-    private final ProductRepository productRepository;
+        private final ProductRepository productRepository;
 
-    public InventoryServiceImpl(ProductRepository productRepository) {
-        this.productRepository = productRepository;
-    }
+        @Override
+        public Product createProduct(ProductRequestDTO request) {
+            int correctedThreshold = request.getMinThreshold();
 
-    @Override
-    @Transactional
-    public Product addProduct(String productName, int stockQuantity, int minQuantity, int restockAmount) {
-        return productRepository.findByName(productName)
-                .map(existing -> {
-                    existing.setStockQuantity(existing.getStockQuantity() + stockQuantity);
-                    existing.setMinQuantity(minQuantity);
-                    existing.setRestockAmount(restockAmount);
-                    return productRepository.save(existing);
-                })
-                .orElseGet(() -> {
-                    Product product = Product.builder()
-                            .name(productName)
-                            .stockQuantity(stockQuantity)
-                            .minQuantity(minQuantity)
-                            .restockAmount(restockAmount)
-                            .build();
-                    return productRepository.save(product);
-                });
-    }
+            // Apply business rule for threshold
+            if ("high".equalsIgnoreCase(request.getPriority()) && request.getMinThreshold() < 10) {
+                correctedThreshold = 10;
+            }
 
-    @Override
-    @Transactional
-    public Product purchaseProduct(int productId, int purchaseQuantity) {
-        Product product = findProductById(productId);
+            // Category assignment
+            String category = request.getRestockQuantity() > 50 ? "high_volume" : "low_volume";
 
-        if (purchaseQuantity > product.getStockQuantity()) {
-            throw new RuntimeException("Not enough stock for product: " + product.getName());
+            Product product = Product.builder()
+                    .name(request.getName())
+                    .priority(request.getPriority().toLowerCase())
+                    .stockQuantity(request.getStockQuantity())
+                    .minThreshold(correctedThreshold)
+                    .restockQuantity(request.getRestockQuantity())
+                    .category(category)
+                    .build();
+
+            return productRepository.save(product);
         }
 
-        product.setStockQuantity(product.getStockQuantity() - purchaseQuantity);
-
-        // Auto-restock if below minQuantity
-        if (product.getStockQuantity() < product.getMinQuantity()) {
-            product.setStockQuantity(product.getStockQuantity() + product.getRestockAmount());
+        @Override
+        public List<Product> getAllProducts() {
+            return productRepository.findAll();
         }
 
-        return productRepository.save(product);
-    }
+        @Override
+        public ProductStatusResponseDTO getProductStatus(int id) {
+            Product product = getProductById(id);
 
-    @Override
-    @Transactional
-    public List<Product> checkInventoryAndRestock(int productId) {
-        Product product = findProductById(productId);
+            String status;
+            if (product.getStockQuantity() == 0) {
+                status = "out_of_stock";
+            } else if (product.getStockQuantity() < product.getMinThreshold()) {
+                // Auto-restock if high priority
+                if ("high".equalsIgnoreCase(product.getPriority())) {
+                    product.setStockQuantity(product.getStockQuantity() + product.getRestockQuantity());
+                    productRepository.save(product);
+                    status = "ok";
+                } else {
+                    status = "below_threshold";
+                }
+            } else {
+                status = "ok";
+            }
 
-        List<Product> result = new ArrayList<>();
-
-        if (product.getStockQuantity() < product.getMinQuantity()) {
-            product.setStockQuantity(product.getStockQuantity() + product.getRestockAmount());
-            productRepository.save(product);
-            result.add(product);
+            return ProductStatusResponseDTO.builder()
+                    .productId(product.getId())
+                    .productName(product.getName())
+                    .status(status)
+                    .stockQuantity(product.getStockQuantity())
+                    .minThreshold(product.getMinThreshold())
+                    .build();
         }
 
-        return result;
-    }
+        @Transactional
+        @Override
+        public Product purchaseProduct(int id, PurchaseRequestDTO request) {
+            Product product = getProductById(id);
 
-    @Override
-    public List<Product> getAllProducts() {
-        return productRepository.findAll();
-    }
+            if (product.getStockQuantity() < request.getQuantity()) {
+                throw new IllegalArgumentException("Not enough stock for purchase.");
+            }
 
-    @Override
-    public Product findProductById(int id) {
-        return productRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Product not found with ID: " + id));
-    }
+            product.setStockQuantity(product.getStockQuantity() - request.getQuantity());
 
-    @Override
-    @Transactional
-    public void deleteProduct(int id) {
-        Product product = findProductById(id);
-        productRepository.delete(product);
+            // Auto-restock if high priority and below threshold after purchase
+            if ("high".equalsIgnoreCase(product.getPriority()) &&
+                    product.getStockQuantity() < product.getMinThreshold()) {
+                product.setStockQuantity(product.getStockQuantity() + product.getRestockQuantity());
+            }
+
+            return productRepository.save(product);
+        }
+
+        @Transactional
+        @Override
+        public Product manualRestock(int id) {
+            Product product = getProductById(id);
+
+            if (!"low".equalsIgnoreCase(product.getPriority())) {
+                throw new IllegalArgumentException("Manual restock allowed only for low priority products.");
+            }
+
+            product.setStockQuantity(product.getStockQuantity() + product.getRestockQuantity());
+            return productRepository.save(product);
+        }
+
+        private Product getProductById(int id) {
+            return productRepository.findById(id).orElseThrow(() ->
+                    new IllegalArgumentException("Product with ID " + id + " not found."));
+        }
     }
-}

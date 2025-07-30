@@ -6,8 +6,6 @@ import lombok.*;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
 public class PurchaseRequestDTO {
-    private String name;
     private int quantity;
 }

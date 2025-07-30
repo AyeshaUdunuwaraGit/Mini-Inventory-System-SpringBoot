@@ -1,29 +1,25 @@
 package com.peercore.nexgen.Mini_inventory_management_system.entity;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
+
 import lombok.*;
+import jakarta.persistence.*;
 
 @Entity
+@Table(name = "products")
 @Getter
 @Setter
-@AllArgsConstructor
 @NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class Product {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
-
     private String name;
-
+    private String priority; // "high" or "low"
     private int stockQuantity;
-
-    private int minQuantity; // Threshold for restock
-
-    private int restockAmount; // Amount to add when restocking
-
+    private int minThreshold;
+    private int restockQuantity;
+    private String category; // "high_volume" or "low_volume"
 }
